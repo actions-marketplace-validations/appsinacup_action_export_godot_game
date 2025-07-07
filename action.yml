@@ -497,11 +497,3 @@ runs:
 
         xcrun stapler staple ${{ inputs.game-name }}.app
         rm ${{ inputs.game-name }}.zip
-
-    - name: List Files
-      shell: bash
-      run: |
-        ls -la
-        ls -la build
-        # find .aab files
-        find . -name "*.aab"
