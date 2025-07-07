@@ -352,7 +352,7 @@ runs:
 
     - name: 🚀 Build Project iOS
       shell: bash
-      if: env.platform-type == 'ios' && inputs.secret-apple-id
+      if: env.platform-type == 'ios' && inputs.secret-apple-id != ''
       run: |
         echo "Building game for platform iOS"
         mkdir -p project/
