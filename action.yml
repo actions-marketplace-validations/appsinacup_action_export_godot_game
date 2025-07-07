@@ -352,7 +352,7 @@ runs:
 
     - name: 🚀 Build Project iOS
       shell: bash
-      if: env.platform-type == 'ios' && inputs.secret-apple-id != ''
+      if: env.platform-type == 'ios' && inputs.secret-ios-distribution-certificate-base64 != ''
       run: |
         echo "Building game for platform iOS"
         mkdir -p project/
@@ -373,7 +373,7 @@ runs:
     - name: Build for iOS
       shell: bash
       working-directory: project
-      if: env.platform-type == 'ios' && inputs.secret-apple-id != ''
+      if: env.platform-type == 'ios' && inputs.secret-ios-distribution-certificate-base64 != ''
       run: |
         xcodebuild -showsdks
         xcodebuild -resolvePackageDependencies
