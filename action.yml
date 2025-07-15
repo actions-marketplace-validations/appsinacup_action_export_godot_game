@@ -279,7 +279,7 @@ runs:
         mkdir -p android/build
         chmod 600 "$GODOT_TEMPLATE/android_source.zip"
         # Replace - with .
-        version_dot=$(echo "${{ env.GODOT_INSTALLED_VERSION }}" | sed 's/-/./')
+        version_dot=$(echo "${{ inputs.godot-version }}" | sed 's/-/./')
         echo "$version_dot"
         echo "$version_dot" >> android/.build_version
         ls -la $GODOT_TEMPLATE
