@@ -69,10 +69,10 @@ for file_name in ["deploy/ios/exportOptions.plist"]:
     with open(file_name, "r") as file:
         content = file.read()
 
-    # Replace app.blazium.game with IOS_PACKAGE env
-    ios_package = os.environ.get("IOS_PACKAGE", "app.blazium.game")
+    # Replace com.godot.game with IOS_PACKAGE env
+    ios_package = os.environ.get("IOS_PACKAGE", "com.godot.game")
     content = re.sub(
-        r'<key>app\.blazium\.game</key>',
+        r'<key>app\.godot\.game</key>',
         f'<key>{ios_package}</key>',
         content
     )
@@ -83,18 +83,18 @@ for file_name in ["deploy/ios/exportOptions.plist"]:
 with open("export_presets.cfg", "r") as file:
     content = file.read()
 
-# Replace app.blazium.game_android with ANDROID_PACKAGE env
-android_package = os.environ.get("ANDROID_PACKAGE", "app.blazium.game_android")
+# Replace com.godot.game_android with ANDROID_PACKAGE env
+android_package = os.environ.get("ANDROID_PACKAGE", "com.godot.game_android")
 content = re.sub(
-    r'app\.blazium\.game_android',
+    r'app\.godot\.game_android',
     f'{android_package}',
     content
 )
 
-# Replace app.blazium.game_ios with IOS_PACKAGE env
-ios_package = os.environ.get("IOS_PACKAGE", "app.blazium.game_ios")
+# Replace com.godot.game_ios with IOS_PACKAGE env
+ios_package = os.environ.get("IOS_PACKAGE", "com.godot.game_ios")
 content = re.sub(
-    r'app\.blazium\.game_ios',
+    r'app\.godot\.game_ios',
     f'{ios_package}',
     content
 )

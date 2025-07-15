@@ -1,16 +1,15 @@
-name: Build Blazium Game
+name: Build Godot Game
 
 description: >-
-  Build Blazium Game for use with macOS, Windows, and Linux CI/CD runners.
+  Build Godot Game for use with macOS, Windows, and Linux CI/CD runners.
 
-author: 'Blazium'
 branding:
   icon: 'cpu'
   color: 'white'
 inputs:
-  blazium-version:
+  godot-version:
     description: >-
-      Blazium Engine version: e.g., 0.1.184-nightly, 0.1.188-nightly, etc. Must include major, minor, and patch.
+      Godot Engine version: e.g., 4.4.1-stable
     default: latest
   game-name:
     description: >-
@@ -18,12 +17,12 @@ inputs:
     required: true
   android-package:
     description: >-
-      Android package name: e.g., app.blazium.game_android
-    default: app.blazium.game_android
+      Android package name: e.g., com.godot.game_android
+    default: com.godot.game_android
   ios-package:
     description: >-
-      iOS package name: e.g., app.blazium.game_ios
-    default: app.blazium.game_ios
+      iOS package name: e.g., com.godot.game_ios
+    default: com.godot.game_ios
   platform-name:
     description: >-
       Platform to build for name. eg. Windows Desktop x86_64, Linux x86_64, etc. Must match version in editor.
@@ -88,21 +87,21 @@ runs:
   steps:
     - uses: actions/checkout@v4
       with:
-        repository: blazium-engine/export-blazium-game
+        repository: appsinacup/action_export_godot_game
         fetch-depth: 0
-        path: export-blazium-game
+        path: export-godot-game
     - name: Copy deploy scripts
       shell: bash
       run: |
         mkdir -p deploy
         mkdir -p deploy/ios
         mkdir -p deploy/mac
-        mv export-blazium-game/deploy/ios/exportOptions.plist deploy/ios/exportOptions.plist
-        mv export-blazium-game/deploy/mac/entitlements-steam.plist deploy/mac/entitlements-steam.plist
-        mv export-blazium-game/deploy/mac/entitlements.plist deploy/mac/entitlements.plist
-        mv export-blazium-game/deploy/update_version.py deploy/update_version.py
+        mv export-godot-game/deploy/ios/exportOptions.plist deploy/ios/exportOptions.plist
+        mv export-godot-game/deploy/mac/entitlements-steam.plist deploy/mac/entitlements-steam.plist
+        mv export-godot-game/deploy/mac/entitlements.plist deploy/mac/entitlements.plist
+        mv export-godot-game/deploy/update_version.py deploy/update_version.py
         # Override export_presets.cfg
-        mv export-blazium-game/export_presets.cfg export_presets.cfg
+        mv export-godot-game/export_presets.cfg export_presets.cfg
 
     - name: Increment Version
       shell: bash
@@ -151,12 +150,11 @@ runs:
           echo "platform-extension=.html" >> $GITHUB_ENV
           echo "platform-type=web" >> $GITHUB_ENV
         fi
-    - uses: blazium-engine/setup-blazium-engine@master
-      name: 🤖 Setup Blazium Engine
+    - uses: appsinacup/action_setup_godot@master
+      name: 🤖 Setup Godot Engine
       with:
-        version: ${{ inputs.blazium-version }}
+        version: ${{ inputs.godot-version }}
         download_template: true
-        use-cache: ${{ inputs.use-cache }}
 
     # https://docs.github.com/en/actions/deployment/deploying-xcode-applications/installing-an-apple-certificate-on-macos-runners-for-xcode-development
     - name: Install the Apple certificate and provisioning profile for macOS
@@ -279,16 +277,16 @@ runs:
       shell: bash
       run: |
         mkdir -p android/build
-        chmod 600 "$BLAZIUM_TEMPLATE/android_source.zip"
+        chmod 600 "$GODOT_TEMPLATE/android_source.zip"
         # Replace - with .
-        if [[ "${{ env.BLAZIUM_INSTALLED_VERSION }}" != *-* ]]; then
-            version_dot="${{ env.BLAZIUM_INSTALLED_VERSION }}.release"
+        if [[ "${{ env.GODOT_INSTALLED_VERSION }}" != *-* ]]; then
+            version_dot="${{ env.GODOT_INSTALLED_VERSION }}.release"
         else
-            version_dot=$(echo "${{ env.BLAZIUM_INSTALLED_VERSION }}" | sed 's/-/./')
+            version_dot=$(echo "${{ env.GODOT_INSTALLED_VERSION }}" | sed 's/-/./')
         fi
         echo "$version_dot"
         echo "$version_dot" >> android/.build_version
-        unzip $BLAZIUM_TEMPLATE/android_source.zip  -d android/build
+        unzip $GODOT_TEMPLATE/android_source.zip  -d android/build
         adb start-server
 
     - name: Setup WINE and rcedit 🍷
@@ -325,7 +323,7 @@ runs:
     - name: 🔬 Verify Setup
       shell: bash
       run: |
-        Blazium --version
+        $GODOT4 --version
 
     - name: 🚀 Build Game
       shell: bash
@@ -333,7 +331,7 @@ runs:
       run: |
         echo "Building game for platform type: ${{ env.platform-type }}"
         mkdir -p build/
-        Blazium --headless --verbose --export-release "${{ inputs.platform-name }}" build/${{ inputs.game-name }}${{ env.platform-extension }}
+        $GODOT4 --headless --verbose --export-release "${{ inputs.platform-name }}" build/${{ inputs.game-name }}${{ env.platform-extension }}
     
     - name: 🚀 Build Android Game
       shell: bash
@@ -348,7 +346,7 @@ runs:
           BUILD_TYPE_FLAG="--export-debug"
         fi
         echo "Using BUILD_TYPE_FLAG: $BUILD_TYPE_FLAG"
-        GODOT_ANDROID_KEYSTORE_RELEASE_PATH="${{ github.workspace }}/release.keystore" && Blazium --headless --verbose $BUILD_TYPE_FLAG "${{ inputs.platform-name }}" build/${{ inputs.game-name }}${{ env.platform-extension }}
+        GODOT_ANDROID_KEYSTORE_RELEASE_PATH="${{ github.workspace }}/release.keystore" && $GODOT4 --headless --verbose $BUILD_TYPE_FLAG "${{ inputs.platform-name }}" build/${{ inputs.game-name }}${{ env.platform-extension }}
 
     - name: 🚀 Build Project iOS
       shell: bash
@@ -356,14 +354,14 @@ runs:
       run: |
         echo "Building game for platform iOS"
         mkdir -p project/
-        Blazium --headless --export-release --verbose "${{ inputs.platform-name }}" project/${{ inputs.game-name }}${{ env.platform-extension }}
+        $GODOT4 --headless --export-release --verbose "${{ inputs.platform-name }}" project/${{ inputs.game-name }}${{ env.platform-extension }}
     
     - name: 🚀 Build Web Game
       shell: bash
       if: env.platform-type == 'web'
       run: |
         mkdir -p build/
-        Blazium --headless --export-release --verbose "${{ inputs.platform-name }}" build/index${{ env.platform-extension }}
+        $GODOT4 --headless --export-release --verbose "${{ inputs.platform-name }}" build/index${{ env.platform-extension }}
     
     - uses: maxim-lobanov/setup-xcode@v1
       if: env.platform-type == 'ios'
@@ -415,7 +413,7 @@ runs:
     - uses: actions/checkout@v4
       if: inputs.steam-app-id != '' && inputs.store-name == 'steam'
       with:
-        repository: blazium-engine/steamworks
+        repository: appsinacup/steamworks
         path: steamworks
 
     - name: Copy steam dlls
