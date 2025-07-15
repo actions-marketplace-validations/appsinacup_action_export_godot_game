@@ -150,7 +150,7 @@ runs:
           echo "platform-extension=.html" >> $GITHUB_ENV
           echo "platform-type=web" >> $GITHUB_ENV
         fi
-    - uses: appsinacup/action_setup_godot@master
+    - uses: appsinacup/action_setup_godot@main
       name: 🤖 Setup Godot Engine
       with:
         version: ${{ inputs.godot-version }}
