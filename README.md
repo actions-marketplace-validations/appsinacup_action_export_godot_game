@@ -5,7 +5,7 @@
 
 ![export godot game](./docs/example.png)
 
-Reusable Action that build a Godot game. These actions build and sign the games with the [Godot Engine](https://godotengine.org) of the version specified.
+Reusable Action that build a Godot game. These actions build and sign the games with the [Godot Engine](https://godotengine.org) of the version specified. You need to have `export_presets.cfg` and it has to have the targets you want to build for (eg. check [_export_presets.cfg](_export_presets.cfg)).
 
 Sample usage:
 ```yml

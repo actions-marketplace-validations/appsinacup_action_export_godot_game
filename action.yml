@@ -104,8 +104,6 @@ runs:
         mv export-godot-game/deploy/mac/entitlements-steam.plist deploy/mac/entitlements-steam.plist
         mv export-godot-game/deploy/mac/entitlements.plist deploy/mac/entitlements.plist
         mv export-godot-game/deploy/update_version.py deploy/update_version.py
-        # Override export_presets.cfg
-        mv export-godot-game/export_presets.cfg export_presets.cfg
 
     - name: Increment Version
       shell: bash
