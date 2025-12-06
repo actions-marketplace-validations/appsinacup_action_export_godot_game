@@ -252,6 +252,20 @@ runs:
         
         ls "$HOME/Library/MobileDevice/Provisioning Profiles"
 
+        # Log provisioning profile details for debugging
+        echo "=========================================="
+        echo "📱 Provisioning Profile Details"
+        echo "=========================================="
+        echo "UUID: $uuid"
+        echo "Profile Name: $(grep -a -A 1 '<key>Name</key>' $PP_PATH | grep string | sed -e 's|<string>||' -e 's|</string>||' | tr -d '\t')"
+        echo "Team ID: $(grep -a -A 1 '<key>TeamIdentifier</key>' $PP_PATH | grep -A 2 array | grep string | head -1 | sed -e 's|<string>||' -e 's|</string>||' | tr -d '\t')"
+        echo "Team Name: $(grep -a -A 1 '<key>TeamName</key>' $PP_PATH | grep string | sed -e 's|<string>||' -e 's|</string>||' | tr -d '\t')"
+        echo "App ID Name: $(grep -a -A 1 '<key>AppIDName</key>' $PP_PATH | grep string | sed -e 's|<string>||' -e 's|</string>||' | tr -d '\t')"
+        echo "Bundle ID (from entitlements): $(grep -a -A 1 '<key>application-identifier</key>' $PP_PATH | grep string | sed -e 's|<string>||' -e 's|</string>||' | tr -d '\t')"
+        echo "Creation Date: $(grep -a -A 1 '<key>CreationDate</key>' $PP_PATH | grep date | sed -e 's|<date>||' -e 's|</date>||' | tr -d '\t')"
+        echo "Expiration Date: $(grep -a -A 1 '<key>ExpirationDate</key>' $PP_PATH | grep date | sed -e 's|<date>||' -e 's|</date>||' | tr -d '\t')"
+        echo "=========================================="
+
     - name: Set up JDK 17
       if: env.platform-type == 'android'
       uses: actions/setup-java@v4
@@ -389,13 +403,6 @@ runs:
       with:
         xcode-version: latest-stable
 
-    - name: Download iOS Platform
-      shell: bash
-      if: env.platform-type == 'ios'
-      run: |
-        echo "Downloading iOS platform..."
-        xcodebuild -downloadPlatform iOS
-
     - name: Build for iOS
       shell: bash
       working-directory: project
@@ -415,6 +422,19 @@ runs:
         sed -i '' "s/PP_UUID/$PP_UUID/g" exportOptions.plist
         # Replace APPLE_TEAM_ID
         sed -i '' "s/APPLE_TEAM_ID/${{ inputs.secret-apple-team-id }}/g" exportOptions.plist
+        
+        # Log exportOptions.plist for debugging
+        echo "=========================================="
+        echo "📄 exportOptions.plist Contents"
+        echo "=========================================="
+        cat exportOptions.plist
+        echo ""
+        echo "=========================================="
+        echo "📂 Installed Provisioning Profiles"
+        echo "=========================================="
+        ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/"
+        echo "=========================================="
+        
         xcodebuild clean archive \
           -verbose \
           -scheme ${{ inputs.game-name }} \
@@ -505,21 +525,63 @@ runs:
         # Remove wrong attributes
         xattr -cr ${{ inputs.game-name }}.app
 
-        # Set permissions and sign the application
+        # Set permissions
         chmod +x ${{ inputs.game-name }}.app
-        # Set permission and sign the binary
         chmod +x ${{ inputs.game-name }}.app/Contents/MacOS/*
 
-        codesign --deep --force --options=runtime --verbose --timestamp \
+        # Sign frameworks individually first (inside-out signing)
+        if [ -d "${{ inputs.game-name }}.app/Contents/Frameworks" ]; then
+          echo "Signing frameworks..."
+          find "${{ inputs.game-name }}.app/Contents/Frameworks" -type f -name "*.dylib" -exec \
+            codesign --force --options=runtime --verbose --timestamp \
+            --sign "${{ env.APPLE_SIGNING_IDENTITY }}" {} \;
+          
+          # Sign framework bundles
+          find "${{ inputs.game-name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
+            echo "Signing framework: $framework"
+            codesign --force --options=runtime --verbose --timestamp \
+              --sign "${{ env.APPLE_SIGNING_IDENTITY }}" "$framework"
+          done
+        fi
+
+        # Sign any dylibs in MacOS folder
+        find "${{ inputs.game-name }}.app/Contents/MacOS" -type f -name "*.dylib" -exec \
+          codesign --force --options=runtime --verbose --timestamp \
+          --sign "${{ env.APPLE_SIGNING_IDENTITY }}" {} \; 2>/dev/null || true
+
+        # Sign the main executable
+        codesign --force --options=runtime --verbose --timestamp \
+          --entitlements ../deploy/mac/entitlements.plist --sign "${{ env.APPLE_SIGNING_IDENTITY }}" \
+          "${{ inputs.game-name }}.app/Contents/MacOS/${{ inputs.game-name }}"
+
+        # Sign the entire app bundle
+        codesign --force --options=runtime --verbose --timestamp \
           --entitlements ../deploy/mac/entitlements.plist --sign "${{ env.APPLE_SIGNING_IDENTITY }}" \
           ${{ inputs.game-name }}.app
 
-        # Package the application into a zip file
-        zip -q -9 -r ${{ inputs.game-name }}.zip ${{ inputs.game-name }}.app
+        # Verify the signature
+        echo "Verifying signature..."
+        codesign --verify --strict --deep --verbose ${{ inputs.game-name }}.app
+
+        # Package the application into a zip file (use ditto to preserve metadata)
+        ditto -c -k --keepParent ${{ inputs.game-name }}.app ${{ inputs.game-name }}.zip
 
         /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials "AppleID" --apple-id "${{ inputs.secret-apple-id }}" --password "${{ inputs.secret-apple-password }}" --team-id "${{ inputs.secret-apple-team-id }}"
 
-        /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit ${{ inputs.game-name }}.zip --wait --keychain-profile "AppleID"
+        # Submit for notarization and capture the submission ID
+        SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit ${{ inputs.game-name }}.zip --wait --keychain-profile "AppleID" 2>&1) || true
+        echo "$SUBMISSION_OUTPUT"
+        
+        # Extract submission ID and check status
+        SUBMISSION_ID=$(echo "$SUBMISSION_OUTPUT" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
+        if echo "$SUBMISSION_OUTPUT" | grep -q "status: Invalid"; then
+          echo "========================================="
+          echo "❌ Notarization FAILED - Fetching detailed log..."
+          echo "========================================="
+          /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool log "$SUBMISSION_ID" --keychain-profile "AppleID"
+          echo "========================================="
+          exit 1
+        fi
 
         xcrun stapler staple ${{ inputs.game-name }}.app
         rm ${{ inputs.game-name }}.zip
@@ -532,21 +594,63 @@ runs:
         # Remove wrong attributes
         xattr -cr ${{ inputs.game-name }}.app
 
-        # Set permissions and sign the application
+        # Set permissions
         chmod +x ${{ inputs.game-name }}.app
-        # Set permission and sign the binary
         chmod +x ${{ inputs.game-name }}.app/Contents/MacOS/*
-        
-        codesign --deep --force --options=runtime --verbose --timestamp \
+
+        # Sign frameworks individually first (inside-out signing)
+        if [ -d "${{ inputs.game-name }}.app/Contents/Frameworks" ]; then
+          echo "Signing frameworks..."
+          find "${{ inputs.game-name }}.app/Contents/Frameworks" -type f -name "*.dylib" -exec \
+            codesign --force --options=runtime --verbose --timestamp \
+            --sign "${{ env.APPLE_SIGNING_IDENTITY }}" {} \;
+          
+          # Sign framework bundles
+          find "${{ inputs.game-name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
+            echo "Signing framework: $framework"
+            codesign --force --options=runtime --verbose --timestamp \
+              --sign "${{ env.APPLE_SIGNING_IDENTITY }}" "$framework"
+          done
+        fi
+
+        # Sign any dylibs in MacOS folder (including Steam library)
+        find "${{ inputs.game-name }}.app/Contents/MacOS" -type f -name "*.dylib" -exec \
+          codesign --force --options=runtime --verbose --timestamp \
+          --sign "${{ env.APPLE_SIGNING_IDENTITY }}" {} \; 2>/dev/null || true
+
+        # Sign the main executable
+        codesign --force --options=runtime --verbose --timestamp \
+          --entitlements ../deploy/mac/entitlements-steam.plist --sign "${{ env.APPLE_SIGNING_IDENTITY }}" \
+          "${{ inputs.game-name }}.app/Contents/MacOS/${{ inputs.game-name }}"
+
+        # Sign the entire app bundle
+        codesign --force --options=runtime --verbose --timestamp \
           --entitlements ../deploy/mac/entitlements-steam.plist --sign "${{ env.APPLE_SIGNING_IDENTITY }}" \
           ${{ inputs.game-name }}.app
+
+        # Verify the signature
+        echo "Verifying signature..."
         codesign --verify --strict --deep --verbose ${{ inputs.game-name }}.app
+
         # Package the application into a zip file
         ditto -c -k --keepParent ${{ inputs.game-name }}.app ${{ inputs.game-name }}.zip
 
         /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials "AppleID" --apple-id "${{ inputs.secret-apple-id }}" --password "${{ inputs.secret-apple-password }}" --team-id "${{ inputs.secret-apple-team-id }}"
 
-        /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit ${{ inputs.game-name }}.zip --wait --keychain-profile "AppleID"
+        # Submit for notarization and capture the submission ID
+        SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit ${{ inputs.game-name }}.zip --wait --keychain-profile "AppleID" 2>&1) || true
+        echo "$SUBMISSION_OUTPUT"
+        
+        # Extract submission ID and check status
+        SUBMISSION_ID=$(echo "$SUBMISSION_OUTPUT" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
+        if echo "$SUBMISSION_OUTPUT" | grep -q "status: Invalid"; then
+          echo "========================================="
+          echo "❌ Notarization FAILED - Fetching detailed log..."
+          echo "========================================="
+          /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool log "$SUBMISSION_ID" --keychain-profile "AppleID"
+          echo "========================================="
+          exit 1
+        fi
 
         xcrun stapler staple ${{ inputs.game-name }}.app
         rm ${{ inputs.game-name }}.zip
