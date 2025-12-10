@@ -612,8 +612,22 @@ runs:
 
         /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials "AppleID" --apple-id "${{ inputs.secret-apple-id }}" --password "${{ inputs.secret-apple-password }}" --team-id "${{ inputs.secret-apple-team-id }}"
 
-        # Submit for notarization and capture the submission ID
-        SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+        # Submit for notarization with retry logic (Apple servers can be flaky)
+        MAX_RETRIES=3
+        RETRY_DELAY=10
+        SUBMISSION_OUTPUT=""
+        for i in $(seq 1 $MAX_RETRIES); do
+          echo "Notarization attempt $i/$MAX_RETRIES..."
+          SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+          if echo "$SUBMISSION_OUTPUT" | grep -q "Successfully uploaded\|status: Accepted\|status: Invalid"; then
+            break
+          fi
+          if [ $i -lt $MAX_RETRIES ]; then
+            echo "Notarization submission failed, retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+            RETRY_DELAY=$((RETRY_DELAY * 2))
+          fi
+        done
         echo "$SUBMISSION_OUTPUT"
         
         # Extract submission ID and check status
@@ -705,8 +719,22 @@ runs:
 
         /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials "AppleID" --apple-id "${{ inputs.secret-apple-id }}" --password "${{ inputs.secret-apple-password }}" --team-id "${{ inputs.secret-apple-team-id }}"
 
-        # Submit for notarization and capture the submission ID
-        SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+        # Submit for notarization with retry logic (Apple servers can be flaky)
+        MAX_RETRIES=3
+        RETRY_DELAY=10
+        SUBMISSION_OUTPUT=""
+        for i in $(seq 1 $MAX_RETRIES); do
+          echo "Notarization attempt $i/$MAX_RETRIES..."
+          SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+          if echo "$SUBMISSION_OUTPUT" | grep -q "Successfully uploaded\|status: Accepted\|status: Invalid"; then
+            break
+          fi
+          if [ $i -lt $MAX_RETRIES ]; then
+            echo "Notarization submission failed, retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+            RETRY_DELAY=$((RETRY_DELAY * 2))
+          fi
+        done
         echo "$SUBMISSION_OUTPUT"
         
         # Extract submission ID and check status
@@ -735,10 +763,6 @@ runs:
 
         echo "Cleaning up signing artifacts..."
 
-        # Erase notarytool credentials if used
-        if command -v /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool >/dev/null 2>&1; then
-          /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool keychain delete "AppleID" || true
-        fi
 
         # Restore original keychain list if saved earlier
         if [ -n "${ORIGINAL_KEYCHAIN_LIST:-}" ]; then
