@@ -326,16 +326,13 @@ runs:
       if: env.platform-type == 'android'
       shell: bash
       run: |
-        # Use absolute paths to avoid permission issues on local runners
-        WORKSPACE="${GITHUB_WORKSPACE:-.}"
-        mkdir -p "$WORKSPACE/android/build"
-        chmod 600 "$GODOT_TEMPLATE/android_source.zip"
+        mkdir -p android/build
         # Replace - with .
         version_dot=$(echo "${{ inputs.godot-version }}" | sed 's/-/./')
-        echo "$version_dot"
-        echo "$version_dot" >> "$WORKSPACE/android/.build_version"
-        ls -la "$GODOT_TEMPLATE"
-        unzip "$GODOT_TEMPLATE/android_source.zip" -d "$WORKSPACE/android/build"
+        echo "Version dot: $version_dot"
+        echo "$version_dot" >> android/.build_version
+        echo "Unzipping template"
+        unzip -q "$GODOT_TEMPLATE/android_source.zip" -d android/build
         adb start-server
 
     - name: Setup WINE and rcedit 🍷
@@ -731,7 +728,7 @@ runs:
 
         # Erase notarytool credentials if used
         if command -v /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool >/dev/null 2>&1; then
-          /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool erase-credentials "AppleID" || true
+          /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool keychain delete "AppleID" || true
         fi
 
         # Restore original keychain list if saved earlier
