@@ -245,9 +245,18 @@ runs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
         fi
 
+        # Download and import Apple WWDR intermediate certificate (required for certificate chain)
+        WWDR_CERT_PATH=$RUNNER_TEMP/AppleWWDRCAG3.cer
+        curl -o "$WWDR_CERT_PATH" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+        security import "$WWDR_CERT_PATH" -k $KEYCHAIN_PATH -T /usr/bin/codesign || true
+        
         # import certificate to keychain
-        # Import first certificate
+        # Import distribution certificate
         security import $BASE_DEPLOY_CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+        
+        # Set keychain partition list to allow codesign to access the private key
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH || true
+        
         security list-keychain -d user -s $KEYCHAIN_PATH
         security find-identity -p basic -v
         SIGNING_IDENTITY=$(security find-identity -p basic -v | awk -F'"' 'NR==1 {print $2}')
