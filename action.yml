@@ -326,14 +326,16 @@ runs:
       if: env.platform-type == 'android'
       shell: bash
       run: |
-        mkdir -p android/build
+        # Use absolute paths to avoid permission issues on local runners
+        WORKSPACE="${GITHUB_WORKSPACE:-.}"
+        mkdir -p "$WORKSPACE/android/build"
         chmod 600 "$GODOT_TEMPLATE/android_source.zip"
         # Replace - with .
         version_dot=$(echo "${{ inputs.godot-version }}" | sed 's/-/./')
         echo "$version_dot"
-        echo "$version_dot" >> android/.build_version
-        ls -la $GODOT_TEMPLATE
-        unzip $GODOT_TEMPLATE/android_source.zip  -d android/build
+        echo "$version_dot" >> "$WORKSPACE/android/.build_version"
+        ls -la "$GODOT_TEMPLATE"
+        unzip "$GODOT_TEMPLATE/android_source.zip" -d "$WORKSPACE/android/build"
         adb start-server
 
     - name: Setup WINE and rcedit 🍷
@@ -471,7 +473,7 @@ runs:
         mv "build/${{ inputs.game-name }}.ipa" "../build/${{ inputs.game-name }}.ipa"
 
     - name: Cleanup iOS signing artifacts
-      if: env.platform-type == 'ios' && inputs.secret-ios-distribution-certificate-base64 != ''
+      if: always() && env.platform-type == 'ios' && inputs.secret-ios-distribution-certificate-base64 != ''
       shell: bash
       run: |
         set -euo pipefail
@@ -716,7 +718,7 @@ runs:
         rm "${{ inputs.game-name }}.zip"
 
     - name: Cleanup macOS signing artifacts
-      if: env.platform-type == 'macos' && inputs.secret-macos-build-certificate-base64 != ''
+      if: always() && env.platform-type == 'macos' && inputs.secret-macos-build-certificate-base64 != ''
       shell: bash
       run: |
         set -euo pipefail
