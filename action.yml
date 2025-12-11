@@ -204,8 +204,26 @@ runs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
         fi
 
+        # Download and import Apple WWDR intermediate certificate (required for certificate chain)
+        WWDR_CERT_PATH=$RUNNER_TEMP/AppleWWDRCAG3.cer
+        curl -o "$WWDR_CERT_PATH" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+        security import "$WWDR_CERT_PATH" -k $KEYCHAIN_PATH -T /usr/bin/codesign || true
+        
+        # Also try G4 and Developer ID G2 certs (for Developer ID certificates)
+        WWDR_G4_CERT_PATH=$RUNNER_TEMP/AppleWWDRCAG4.cer
+        curl -o "$WWDR_G4_CERT_PATH" https://www.apple.com/certificateauthority/AppleWWDRCAG4.cer
+        security import "$WWDR_G4_CERT_PATH" -k $KEYCHAIN_PATH -T /usr/bin/codesign || true
+        
+        DEVID_G2_CERT_PATH=$RUNNER_TEMP/DeveloperIDG2CA.cer
+        curl -o "$DEVID_G2_CERT_PATH" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+        security import "$DEVID_G2_CERT_PATH" -k $KEYCHAIN_PATH -T /usr/bin/codesign || true
+        
         # import certificate to keychain
         security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+        
+        # Set keychain partition list to allow codesign to access the private key
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH || true
+        
         security list-keychain -d user -s $KEYCHAIN_PATH
 
         SIGNING_IDENTITY=$(security find-identity -p codesigning -v | awk -F'"' 'NR==1 {print $2}')
@@ -245,9 +263,18 @@ runs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
         fi
 
+        # Download and import Apple WWDR intermediate certificate (required for certificate chain)
+        WWDR_CERT_PATH=$RUNNER_TEMP/AppleWWDRCAG3.cer
+        curl -o "$WWDR_CERT_PATH" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+        security import "$WWDR_CERT_PATH" -k $KEYCHAIN_PATH -T /usr/bin/codesign || true
+        
         # import certificate to keychain
-        # Import first certificate
+        # Import distribution certificate
         security import $BASE_DEPLOY_CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+        
+        # Set keychain partition list to allow codesign to access the private key
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH || true
+        
         security list-keychain -d user -s $KEYCHAIN_PATH
         security find-identity -p basic -v
         SIGNING_IDENTITY=$(security find-identity -p basic -v | awk -F'"' 'NR==1 {print $2}')
@@ -327,13 +354,12 @@ runs:
       shell: bash
       run: |
         mkdir -p android/build
-        chmod 600 "$GODOT_TEMPLATE/android_source.zip"
         # Replace - with .
         version_dot=$(echo "${{ inputs.godot-version }}" | sed 's/-/./')
-        echo "$version_dot"
+        echo "Version dot: $version_dot"
         echo "$version_dot" >> android/.build_version
-        ls -la $GODOT_TEMPLATE
-        unzip $GODOT_TEMPLATE/android_source.zip  -d android/build
+        echo "Unzipping template"
+        unzip -q "$GODOT_TEMPLATE/android_source.zip" -d android/build
         adb start-server
 
     - name: Setup WINE and rcedit 🍷
@@ -471,7 +497,7 @@ runs:
         mv "build/${{ inputs.game-name }}.ipa" "../build/${{ inputs.game-name }}.ipa"
 
     - name: Cleanup iOS signing artifacts
-      if: env.platform-type == 'ios' && inputs.secret-ios-distribution-certificate-base64 != ''
+      if: always() && env.platform-type == 'ios' && inputs.secret-ios-distribution-certificate-base64 != ''
       shell: bash
       run: |
         set -euo pipefail
@@ -604,8 +630,22 @@ runs:
 
         /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials "AppleID" --apple-id "${{ inputs.secret-apple-id }}" --password "${{ inputs.secret-apple-password }}" --team-id "${{ inputs.secret-apple-team-id }}"
 
-        # Submit for notarization and capture the submission ID
-        SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+        # Submit for notarization with retry logic (Apple servers can be flaky)
+        MAX_RETRIES=3
+        RETRY_DELAY=10
+        SUBMISSION_OUTPUT=""
+        for i in $(seq 1 $MAX_RETRIES); do
+          echo "Notarization attempt $i/$MAX_RETRIES..."
+          SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+          if echo "$SUBMISSION_OUTPUT" | grep -q "Successfully uploaded\|status: Accepted\|status: Invalid"; then
+            break
+          fi
+          if [ $i -lt $MAX_RETRIES ]; then
+            echo "Notarization submission failed, retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+            RETRY_DELAY=$((RETRY_DELAY * 2))
+          fi
+        done
         echo "$SUBMISSION_OUTPUT"
         
         # Extract submission ID and check status
@@ -697,8 +737,22 @@ runs:
 
         /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials "AppleID" --apple-id "${{ inputs.secret-apple-id }}" --password "${{ inputs.secret-apple-password }}" --team-id "${{ inputs.secret-apple-team-id }}"
 
-        # Submit for notarization and capture the submission ID
-        SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+        # Submit for notarization with retry logic (Apple servers can be flaky)
+        MAX_RETRIES=3
+        RETRY_DELAY=10
+        SUBMISSION_OUTPUT=""
+        for i in $(seq 1 $MAX_RETRIES); do
+          echo "Notarization attempt $i/$MAX_RETRIES..."
+          SUBMISSION_OUTPUT=$(/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool submit "${{ inputs.game-name }}.zip" --wait --keychain-profile "AppleID" 2>&1) || true
+          if echo "$SUBMISSION_OUTPUT" | grep -q "Successfully uploaded\|status: Accepted\|status: Invalid"; then
+            break
+          fi
+          if [ $i -lt $MAX_RETRIES ]; then
+            echo "Notarization submission failed, retrying in ${RETRY_DELAY}s..."
+            sleep $RETRY_DELAY
+            RETRY_DELAY=$((RETRY_DELAY * 2))
+          fi
+        done
         echo "$SUBMISSION_OUTPUT"
         
         # Extract submission ID and check status
@@ -716,7 +770,7 @@ runs:
         rm "${{ inputs.game-name }}.zip"
 
     - name: Cleanup macOS signing artifacts
-      if: env.platform-type == 'macos' && inputs.secret-macos-build-certificate-base64 != ''
+      if: always() && env.platform-type == 'macos' && inputs.secret-macos-build-certificate-base64 != ''
       shell: bash
       run: |
         set -euo pipefail
@@ -727,10 +781,6 @@ runs:
 
         echo "Cleaning up signing artifacts..."
 
-        # Erase notarytool credentials if used
-        if command -v /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool >/dev/null 2>&1; then
-          /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool erase-credentials "AppleID" || true
-        fi
 
         # Restore original keychain list if saved earlier
         if [ -n "${ORIGINAL_KEYCHAIN_LIST:-}" ]; then
